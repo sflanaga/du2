@@ -1,0 +1,9 @@
+[package]
+name = "du2"
+version = "0.1.0"
+authors = ["smf9749"]
+
+[dependencies]
+users = "0.5.0"
+
+
