@@ -281,11 +281,11 @@ pub fn version() -> &'static str {
 
 
 fn help() {
-eprintln!(r###"\ndu2 [options] dir1 .. dirN
+eprintln!("\ndu2 [options] dir1 .. dirN
 csv [options] <reads from stdin>
     -h|--help  this help
     -n  how many top X to track for reporting
-    -v  verbose mode - mainly print directories it does not have permission to scan"###);
+    -v  verbose mode - mainly print directories it does not have permission to scan");
 eprintln!("version: {}\n", version());
 process::exit(1);
 }
