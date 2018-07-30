@@ -240,23 +240,23 @@ fn run() -> GenResult<()> {
     }
 
 
-    println!("\nTop dir classical:");
+    println!("\nTop dir size recursive:");
     for v in top_dir_overall.into_sorted_vec() {
         println!("{:10} {}", greek(v.size as f64),v.path.to_string_lossy());
     }
 
 
-    println!("\nTop file count under single directory:");
+    println!("\nTop counts of files in a single directory:");
     for v in top_cnt_file.into_sorted_vec() {
         println!("{:10} {}", v.size,v.path.to_string_lossy());
     }
 
-    println!("\nTop directory under single directory:");
+    println!("\nTop counts of directories in a single directory:");
     for v in top_cnt_dir.into_sorted_vec() {
         println!("{:10} {}", v.size,v.path.to_string_lossy());
     }
 
-    println!("\nTop sized file(s):");
+    println!("\nLargest file(s):");
     for v in top_files.into_sorted_vec() {
         println!("{:10} {}", greek(v.size as f64),v.path.to_string_lossy());
     }
