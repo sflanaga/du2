@@ -192,7 +192,7 @@ fn run() -> GenResult<()> {
         let path = Path::new(& path);
         if path.exists() {
             if path.metadata().unwrap().is_dir() {
-                println!(r#"scanning {}"#, path.to_string_lossy());
+                println!(r#"scanning \"{}\""#, path.to_string_lossy());
                 match walk_dir(verbose, limit, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files) {
                     Ok( (that_tot, that_cnt) ) => { total += that_tot; count += that_cnt; },
                     Err(e) =>
@@ -272,13 +272,22 @@ fn main() {
 }
 
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
+pub fn version() -> &'static str {
+    concat!(env!("CARGO_PKG_VERSION"), include_str!(concat!(env!("OUT_DIR"), "/commit-info.txt")))
+}
+
+
+
 fn help() {
-println!(r###"du2 [options] dir1 .. dirN
+eprintln!(r###"du2 [options] dir1 .. dirN
 csv [options] <reads from stdin>
     -h|--help  this help
     -n  how many top X to track for reporting
     -v  verbose mode - mainly print directories it does not have permission to scan
 "###);
+eprintln!("version: {}", version());
 process::exit(1);
 }
 
