@@ -155,14 +155,14 @@ fn run() -> GenResult<()> {
     let mut i = 0;
     while i < argv.len() {
         match &argv[i][..] {
-            "--help" => { // field list processing
+            "--help" | "-h" => { // field list processing
                 help();
             },
-            "-n" => { // field list processing
+            "-n" => { 
                 i += 1;
                 limit = argv[i].parse::<usize>().unwrap();
             },
-            "-v" => { // field list processing
+            "-v" => { 
                 verbose = true;
             },
             x => {
@@ -177,7 +177,6 @@ fn run() -> GenResult<()> {
         filelist.push("./");
     }
 
-
     let start_f = Instant::now();
 
     let mut user_map: BTreeMap<u32, u64> = BTreeMap::new();
@@ -191,19 +190,26 @@ fn run() -> GenResult<()> {
     let mut count = 0u64;
     for path in filelist {
         let path = Path::new(& path);
-        //println!("scan {}", path.to_string_lossy());
-        match walk_dir(verbose, limit, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files) {
-            Ok( (that_tot, that_cnt) ) => { total += that_tot; count += that_cnt; },
-            Err(e) =>
-                eprint!("error trying walk top dir {}, error = {} but continuing",path.to_string_lossy(), e),
+        if path.exists() {
+            if path.metadata().unwrap().is_dir() {
+                println!(r#"scanning {}"#, path.to_string_lossy());
+                match walk_dir(verbose, limit, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files) {
+                    Ok( (that_tot, that_cnt) ) => { total += that_tot; count += that_cnt; },
+                    Err(e) =>
+                        eprint!("error trying walk top dir {}, error = {} but continuing",path.to_string_lossy(), e),
+                    }
+            } else { // not a dir
+                eprintln!("path \"{}\" is a file and not a directory!", path.to_string_lossy());
             }
+        } else { // does not exist
+            eprintln!("path \"{}\" does not exist!", path.to_string_lossy());
+        }
     }
     //let (total,count) = walk_dir(limit, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files)?;
 
     let elapsed = start_f.elapsed();
     let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
 
-    println!("File space scanned: {} and {} files in {} seconds", greek(total as f64), count, sec);
 
     #[derive(Debug)]
     struct u2u {
@@ -212,39 +218,45 @@ fn run() -> GenResult<()> {
     };
     let mut user_vec: Vec<u2u> = user_map.iter().map( |(&x,&y)| u2u {size: y, uid:x } ).collect();
     user_vec.sort_by( |b,a| a.size.cmp(&b.size).then(b.uid.cmp(&b.uid)) );
+    if user_vec.len() > 0 {
+        println!("File space scanned: {} and {} files in {} seconds", greek(total as f64), count, sec);
 
-    println!("\nSpace used per user");
-    for ue in &user_vec {
-        match get_user_by_uid(ue.uid) {
-            None => println!("uid{:7} {} ", ue.uid, greek(ue.size as f64)),
-            Some(user) => println!("{:10} {} ", user.name(), greek(ue.size as f64)),
+        println!("\nSpace used per user");
+        for ue in &user_vec {
+            match get_user_by_uid(ue.uid) {
+                None => println!("uid{:7} {} ", ue.uid, greek(ue.size as f64)),
+                Some(user) => println!("{:10} {} ", user.name(), greek(ue.size as f64)),
+            }
+
         }
-
+    } else {
+        eprintln!("nothing scanned");
+        return Ok( () );
     }
-
-    println!("\nTop dir with space usage directly inside them");
+    
+    println!("\nTop dir with space usage directly inside them:");
     for v in top_dir.into_sorted_vec() {
         println!("{:10} {}", greek(v.size as f64),v.path.to_string_lossy());
     }
 
 
-    println!("\nTop dir ");
+    println!("\nTop dir classical:");
     for v in top_dir_overall.into_sorted_vec() {
         println!("{:10} {}", greek(v.size as f64),v.path.to_string_lossy());
     }
 
 
-    println!("\nTop dir count with files directly inside it");
+    println!("\nTop file count under single directory:");
     for v in top_cnt_file.into_sorted_vec() {
         println!("{:10} {}", v.size,v.path.to_string_lossy());
     }
 
-    println!("\nTop dir count with directories directly inside it");
+    println!("\nTop directory under single directory:");
     for v in top_cnt_dir.into_sorted_vec() {
         println!("{:10} {}", v.size,v.path.to_string_lossy());
     }
 
-    println!("\nTop sized files");
+    println!("\nTop sized file(s):");
     for v in top_files.into_sorted_vec() {
         println!("{:10} {}", greek(v.size as f64),v.path.to_string_lossy());
     }
@@ -263,9 +275,9 @@ fn main() {
 fn help() {
 println!(r###"du2 [options] dir1 .. dirN
 csv [options] <reads from stdin>
-    -h this help
-    -n how many top X to track
-    -v verbose mode - mainly print directories it does not have permission to scan
+    -h|--help  this help
+    -n  how many top X to track for reporting
+    -v  verbose mode - mainly print directories it does not have permission to scan
 "###);
 process::exit(1);
 }
