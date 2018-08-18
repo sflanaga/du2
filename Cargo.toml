@@ -5,5 +5,7 @@ authors = ["smf9749"]
 
 [dependencies]
 users = "0.7.0"
+console = "0.6.1"
+separator = "0.3.1"
 
 

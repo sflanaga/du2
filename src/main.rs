@@ -2,6 +2,8 @@
 #![allow(unused_variables)]
 
 extern crate users;
+extern crate console;
+extern crate separator;
 
 use std::fs;
 use std::env::args;
@@ -15,14 +17,23 @@ use std::collections::BinaryHeap;
 use std::os::linux::fs::MetadataExt;
 use users::{get_user_by_uid, get_current_uid};
 use std::time::Instant;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize};
+use std::thread;
+use std::time::Duration;
+use console::Term;
 
 type GenError = Box<std::error::Error>;
 type GenResult<T> = Result<T, GenError>;
 use std::fmt;
 
+use separator::Separatable;
 
 mod util;
 use util::{greek};
+
+static mut COUNT_STATS: usize = 0;
+static mut TICK_GO: usize = 1;
 
 #[derive(Eq, Debug)]
 struct TrackedPath {
@@ -122,10 +133,13 @@ fn walk_dir(verbose: bool, limit: usize, dir: &Path, depth: u32,
                     *user_map.entry(uid).or_insert(0) += s;
                     local_cnt_file += 1;
                     this_cnt +=1;
+
+                    unsafe { COUNT_STATS +=1; }
                     track_top_n2(&mut top_files, &p, s, limit); // track single immediate space
                     // println!("{}", p.to_str().unwrap());
                 } else if meta.is_dir() {
                     local_cnt_dir += 1;
+                    unsafe { COUNT_STATS +=1; }
                     //let (that_tot, that_cnt) = walk_dir(limit, &p, depth+1, user_map, top_dir, top_cnt_dir, top_cnt_file, top_dir_overall, top_files)?;
                     match walk_dir(verbose, limit, &p, depth+1, user_map, top_dir, top_cnt_dir, top_cnt_file, top_dir_overall, top_files) {
                         Ok( (that_tot, that_cnt) ) => { this_tot += that_tot; this_cnt += that_cnt; },
@@ -188,16 +202,45 @@ fn run() -> GenResult<()> {
     let mut top_files: BinaryHeap<TrackedPath> = BinaryHeap::new();
     let mut total = 0u64;
     let mut count = 0u64;
+
+
     for path in filelist {
         let path = Path::new(& path);
         if path.exists() {
             if path.metadata().unwrap().is_dir() {
-                println!(r#"scanning \"{}\""#, path.to_string_lossy());
+                println!("scanning \"{}\"", path.to_string_lossy());
+
+                let thread = thread::spawn(|| {
+                    if !console::user_attended() { return; }
+                    let term = Term::stdout();
+                    let mut last_cnt = 0usize;
+                    let mut ticks = 1usize;
+                    loop {
+                        unsafe {
+                            let delta = (COUNT_STATS - last_cnt)*5;
+                            let allrate = COUNT_STATS*5/ticks;
+                            let now_cnt = COUNT_STATS;
+                            print!("nodes: {} spot rate/s: {} all rate/s: {}", now_cnt.separated_string(), delta.separated_string(), allrate.separated_string());
+                            std::io::stdout().flush().unwrap();
+                            last_cnt = COUNT_STATS;
+                            thread::sleep(Duration::from_millis(200));
+                            term.clear_line();
+                            if TICK_GO == 0 {
+                                break;
+                            }
+                            ticks += 1;
+                         }
+                    }
+                });
+
                 match walk_dir(verbose, limit, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files) {
                     Ok( (that_tot, that_cnt) ) => { total += that_tot; count += that_cnt; },
                     Err(e) =>
                         eprint!("error trying walk top dir {}, error = {} but continuing",path.to_string_lossy(), e),
                     }
+                unsafe { TICK_GO = 0; }
+                thread.join().unwrap();
+
             } else { // not a dir
                 eprintln!("path \"{}\" is a file and not a directory!", path.to_string_lossy());
             }
