@@ -42,6 +42,14 @@ struct TrackedPath {
     path: PathBuf
 }
 
+#[derive(Debug)]
+struct TimeSpec {
+    newer_than_check: bool,
+    older_than_check: bool,
+    older_than: SystemTime,
+    newer_than: SystemTime,
+}
+
 impl Ord for TrackedPath {
     fn cmp(&self, other: &TrackedPath) -> Ordering {
         self.size.cmp(&other.size).reverse()
@@ -127,7 +135,7 @@ fn track_top_n2(heap: &mut BinaryHeap<TrackedPath>, p: &Path, s: u64, limit: usi
     return false;
 }
 
-fn walk_dir(verbose: bool, limit: usize, age: &SystemTime, dir: &Path, depth: u32,
+fn walk_dir(verbose: bool, limit: usize, age: &TimeSpec, dir: &Path, depth: u32,
     user_map: &mut BTreeMap<u32, u64>,
     mut top_dir: &mut BinaryHeap<TrackedPath>,
     mut top_cnt_dir: &mut BinaryHeap<TrackedPath>,
@@ -148,7 +156,9 @@ fn walk_dir(verbose: bool, limit: usize, age: &SystemTime, dir: &Path, depth: u3
                 let meta = e.metadata()?;
                 let p = e.path();
                 if meta.is_file() {
-                    if *age > meta.modified().unwrap() {
+                    let f_age = meta.modified().unwrap();
+                    if (!age.newer_than_check || age.newer_than < f_age ) &&
+                       (!age.older_than_check || age.older_than > f_age) {
                         let s = meta.len();
                         this_tot += s;
                         local_tot += s;
@@ -164,7 +174,6 @@ fn walk_dir(verbose: bool, limit: usize, age: &SystemTime, dir: &Path, depth: u3
                 } else if meta.is_dir() {
                     local_cnt_dir += 1;
                     unsafe { COUNT_STATS +=1; }
-                    //let (that_tot, that_cnt) = walk_dir(limit, &p, depth+1, user_map, top_dir, top_cnt_dir, top_cnt_file, top_dir_overall, top_files)?;
                     match walk_dir(verbose, limit, &age, &p, depth+1, user_map, top_dir, top_cnt_dir, top_cnt_file, top_dir_overall, top_files) {
                         Ok( (that_tot, that_cnt) ) => { this_tot += that_tot; this_cnt += that_cnt; },
                         Err(e) => if verbose { eprint!("error trying walk {}, error = {} but continuing",p.to_string_lossy(), e) },
@@ -190,6 +199,13 @@ fn run() -> GenResult<()> {
     let filelist = &mut vec![];
     let mut verbose = false;
     let mut limit = 25;
+    let mut time_spec = TimeSpec {
+        newer_than_check: false,
+        older_than_check: false,
+        newer_than: SystemTime::now(),
+        older_than: SystemTime::now(),
+    };
+
     let mut age = SystemTime::now();
     let mut i = 0;
     while i < argv.len() {
@@ -201,12 +217,17 @@ fn run() -> GenResult<()> {
                 i += 1;
                 limit = argv[i].parse::<usize>().unwrap();
             },
-             "-a" => { 
+            "--file-newer-than" => { 
                 i += 1;
                 let age_i = durFromStr(argv[i].as_str());
-                age = age - age_i; 
-                println!(" age {:?}", age);
-                
+                time_spec.newer_than_check = true;
+                time_spec.newer_than = time_spec.newer_than - age_i;
+            },
+            "--file-older-than" => { 
+                i += 1;
+                let age_i = durFromStr(argv[i].as_str());
+                time_spec.older_than_check = true;
+                time_spec.older_than = time_spec.older_than - age_i;
             },
             "-v" => { 
                 verbose = true;
@@ -265,7 +286,7 @@ fn run() -> GenResult<()> {
                     }
                 });
 
-                match walk_dir(verbose, limit, &age, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files) {
+                match walk_dir(verbose, limit, &time_spec, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files) {
                     Ok( (that_tot, that_cnt) ) => { total += that_tot; count += that_cnt; },
                     Err(e) =>
                         eprint!("error trying walk top dir {}, error = {} but continuing",path.to_string_lossy(), e),
@@ -359,7 +380,10 @@ fn help() {
 eprintln!("\ndu2 [options] dir1 .. dirN
 csv [options] <reads from stdin>
     -h|--help  this help
-    -a [2y4w15d5h5s] count only files older than X time ago 
+    --file-newer-than <time ago spec>
+    --file-older-than <time ago spec>
+    note: time ago spec example: 1y22d4m means 1 year 22 days and 4 minutes ago
+    -a [2h33m32s] count only files older than X time ago 
     -n  how many top X to track for reporting
     -v  verbose mode - mainly print directories it does not have permission to scan");
 eprintln!("version: {}\n", version());
