@@ -20,8 +20,9 @@ use std::time::Instant;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize};
 use std::thread;
-use std::time::Duration;
 use console::Term;
+
+use std::time::{Duration, SystemTime};
 
 type GenError = Box<std::error::Error>;
 type GenResult<T> = Result<T, GenError>;
@@ -59,6 +60,26 @@ impl PartialEq for TrackedPath {
     }
 }
 
+fn durFromStr(s: &str) -> Duration {
+    let mut _tmp = String::new();
+    let mut tot_secs = 0u64;
+    for c in s.chars() {
+        if c >= '0' && c <= '9' { _tmp.push(c); }
+        else {
+            tot_secs += match c {
+                's' => _tmp.parse::<u64>().unwrap(),
+                'm' => _tmp.parse::<u64>().unwrap() * 60,
+                'h' => _tmp.parse::<u64>().unwrap() * 3600,
+                'd' => _tmp.parse::<u64>().unwrap() * 24 * 3600,
+                'w' => _tmp.parse::<u64>().unwrap() * 24 * 3600 * 7,
+                'y' => _tmp.parse::<u64>().unwrap() * 24 * 3600 * 365,
+                _ => panic!("char {} not understood", c),
+            };
+            _tmp.clear();
+        }
+    }
+    Duration::from_secs(tot_secs)
+}
 
 
 fn track_top_n(map: &mut BTreeMap<u64, PathBuf>, path: &Path, size: u64, limit: usize) -> bool {
@@ -106,7 +127,7 @@ fn track_top_n2(heap: &mut BinaryHeap<TrackedPath>, p: &Path, s: u64, limit: usi
     return false;
 }
 
-fn walk_dir(verbose: bool, limit: usize, dir: &Path, depth: u32,
+fn walk_dir(verbose: bool, limit: usize, age: &SystemTime, dir: &Path, depth: u32,
     user_map: &mut BTreeMap<u32, u64>,
     mut top_dir: &mut BinaryHeap<TrackedPath>,
     mut top_cnt_dir: &mut BinaryHeap<TrackedPath>,
@@ -121,27 +142,30 @@ fn walk_dir(verbose: bool, limit: usize, dir: &Path, depth: u32,
             let mut local_tot = 0u64;
             let mut local_cnt_file = 0u64;
             let mut local_cnt_dir = 0u64;
-            for e in itr {
+            let paths : Vec<_> = itr.collect();
+            for e in paths {
                 let e = e?;
                 let meta = e.metadata()?;
                 let p = e.path();
                 if meta.is_file() {
-                    let s = meta.len();
-                    this_tot += s;
-                    local_tot += s;
-                    let uid = meta.st_uid();
-                    *user_map.entry(uid).or_insert(0) += s;
-                    local_cnt_file += 1;
-                    this_cnt +=1;
+                    if *age > meta.modified().unwrap() {
+                        let s = meta.len();
+                        this_tot += s;
+                        local_tot += s;
+                        let uid = meta.st_uid();
+                        *user_map.entry(uid).or_insert(0) += s;
+                        local_cnt_file += 1;
+                        this_cnt +=1;
 
-                    unsafe { COUNT_STATS +=1; }
-                    track_top_n2(&mut top_files, &p, s, limit); // track single immediate space
-                    // println!("{}", p.to_str().unwrap());
+                        unsafe { COUNT_STATS +=1; }
+                        track_top_n2(&mut top_files, &p, s, limit); 
+                        // println!("{}", p.to_str().unwrap());
+                    }
                 } else if meta.is_dir() {
                     local_cnt_dir += 1;
                     unsafe { COUNT_STATS +=1; }
                     //let (that_tot, that_cnt) = walk_dir(limit, &p, depth+1, user_map, top_dir, top_cnt_dir, top_cnt_file, top_dir_overall, top_files)?;
-                    match walk_dir(verbose, limit, &p, depth+1, user_map, top_dir, top_cnt_dir, top_cnt_file, top_dir_overall, top_files) {
+                    match walk_dir(verbose, limit, &age, &p, depth+1, user_map, top_dir, top_cnt_dir, top_cnt_file, top_dir_overall, top_files) {
                         Ok( (that_tot, that_cnt) ) => { this_tot += that_tot; this_cnt += that_cnt; },
                         Err(e) => if verbose { eprint!("error trying walk {}, error = {} but continuing",p.to_string_lossy(), e) },
                     };
@@ -166,6 +190,7 @@ fn run() -> GenResult<()> {
     let filelist = &mut vec![];
     let mut verbose = false;
     let mut limit = 25;
+    let mut age = SystemTime::now();
     let mut i = 0;
     while i < argv.len() {
         match &argv[i][..] {
@@ -175,6 +200,13 @@ fn run() -> GenResult<()> {
             "-n" => { 
                 i += 1;
                 limit = argv[i].parse::<usize>().unwrap();
+            },
+             "-a" => { 
+                i += 1;
+                let age_i = durFromStr(argv[i].as_str());
+                age = age - age_i; 
+                println!(" age {:?}", age);
+                
             },
             "-v" => { 
                 verbose = true;
@@ -211,7 +243,7 @@ fn run() -> GenResult<()> {
                 println!("scanning \"{}\"", path.to_string_lossy());
 
                 let thread = thread::spawn(|| {
-                    if !console::user_attended() { return; }
+                    if !console::user_attended() {return; }
                     let term = Term::stdout();
                     let mut last_cnt = 0usize;
                     let mut ticks = 1usize;
@@ -233,7 +265,7 @@ fn run() -> GenResult<()> {
                     }
                 });
 
-                match walk_dir(verbose, limit, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files) {
+                match walk_dir(verbose, limit, &age, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files) {
                     Ok( (that_tot, that_cnt) ) => { total += that_tot; count += that_cnt; },
                     Err(e) =>
                         eprint!("error trying walk top dir {}, error = {} but continuing",path.to_string_lossy(), e),
@@ -327,6 +359,7 @@ fn help() {
 eprintln!("\ndu2 [options] dir1 .. dirN
 csv [options] <reads from stdin>
     -h|--help  this help
+    -a [2y4w15d5h5s] count only files older than X time ago 
     -n  how many top X to track for reporting
     -v  verbose mode - mainly print directories it does not have permission to scan");
 eprintln!("version: {}\n", version());

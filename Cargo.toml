@@ -2,6 +2,7 @@
 name = "du2"
 version = "0.1.1"
 authors = ["smf9749"]
+build="build.rs"
 
 [dependencies]
 users = "0.7.0"
