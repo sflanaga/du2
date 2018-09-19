@@ -192,6 +192,7 @@ fn run() -> GenResult<()> {
     let mut cli_verbose = false;
     let mut cli_no_user = false;
     let mut clilimit = 25;
+    let mut ticker_time = 200u64;
     let mut time_spec = TimeSpec {
         newer_than_check: false,
         older_than_check: false,
@@ -209,6 +210,10 @@ fn run() -> GenResult<()> {
             "-n" => { 
                 i += 1;
                 clilimit = argv[i].parse::<usize>().unwrap();
+            },
+            "-i" => { 
+                i += 1;
+                ticker_time = argv[i].parse::<u64>().unwrap();
             },
             "--file-newer-than" => { 
                 i += 1;
@@ -274,7 +279,7 @@ fn run() -> GenResult<()> {
             if path.metadata().unwrap().is_dir() {
                 println!("scanning \"{}\"", path.to_string_lossy());
 
-                let thread = thread::spawn(|| {
+                let thread = thread::spawn(move || {
                     if !console::user_attended() {return; }
                     let term = Term::stdout();
                     let mut last_cnt = 0usize;
@@ -287,7 +292,7 @@ fn run() -> GenResult<()> {
                             print!("nodes: {} spot rate/s: {} all rate/s: {}", now_cnt.separated_string(), delta.separated_string(), allrate.separated_string());
                             std::io::stdout().flush().unwrap();
                             last_cnt = COUNT_STATS;
-                            thread::sleep(Duration::from_millis(200));
+                            thread::sleep(Duration::from_millis(ticker_time));
                             term.clear_line().unwrap();
                             if TICK_GO == 0 {
                                 break;
@@ -395,6 +400,7 @@ csv [options] <reads from stdin>
     note: time ago spec example: 1y22d4m means 1 year 22 days and 4 minutes ago
     -a [2h33m32s] count only files older than X time ago 
     -n  how many top X to track for reporting
+    -i  ticker interval is ms - default is 200ms
     -v  verbose mode - mainly print directories it does not have permission to scan");
 eprintln!("version: {}\n", version());
 process::exit(1);
