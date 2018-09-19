@@ -119,6 +119,7 @@ fn track_top_n2(heap: &mut BinaryHeap<TrackedPath>, p: &Path, s: u64, limit: usi
 #[derive(Debug)]
 struct WalkSetting {
     verbose: bool,
+    no_user: bool,
     limit: usize,
     age: TimeSpec,
     user_map: BTreeMap<u32, u64>,
@@ -131,14 +132,6 @@ struct WalkSetting {
 
 
 fn walk_dir(ws: &mut WalkSetting, dir: &Path, depth: u32) -> GenResult<(u64,u64)> {
-
-/* fn walk_dir(verbose: bool, limit: usize, age: &TimeSpec, dir: &Path, depth: u32,
-    user_map: &mut BTreeMap<u32, u64>,
-    mut top_dir: &mut BinaryHeap<TrackedPath>,
-    mut top_cnt_dir: &mut BinaryHeap<TrackedPath>,
-    mut top_cnt_file: &mut BinaryHeap<TrackedPath>,
-    mut top_dir_overall: &mut BinaryHeap<TrackedPath>,
-    mut top_files: &mut BinaryHeap<TrackedPath>) -> GenResult<(u64,u64)> { */
     let itr = fs::read_dir(dir);
     let mut this_tot = 0;
     let mut this_cnt = 0;
@@ -159,8 +152,10 @@ fn walk_dir(ws: &mut WalkSetting, dir: &Path, depth: u32) -> GenResult<(u64,u64)
                         let s = meta.len();
                         this_tot += s;
                         local_tot += s;
-                        let uid = meta.st_uid();
-                        *ws.user_map.entry(uid).or_insert(0) += s;
+                        if !ws.no_user {
+                            let uid = meta.st_uid();
+                            *ws.user_map.entry(uid).or_insert(0) += s;
+                        }
                         local_cnt_file += 1;
                         this_cnt +=1;
 
@@ -194,7 +189,8 @@ fn run() -> GenResult<()> {
     //if argv.len() == 1 { help(); }
 
     let filelist = &mut vec![];
-    let mut verbose = false;
+    let mut cli_verbose = false;
+    let mut cli_no_user = false;
     let mut clilimit = 25;
     let mut time_spec = TimeSpec {
         newer_than_check: false,
@@ -231,10 +227,13 @@ fn run() -> GenResult<()> {
                 println!("consider files older than: {}", datetime.format("%Y-%m-%d %T"));
              },
             "-v" => { 
-                verbose = true;
+                cli_verbose = true;
+            },
+            "--no-user" => { 
+                cli_no_user = true;
             },
             x => {
-                if verbose { println!("adding filename {} to scan", x); }
+                if cli_verbose { println!("adding filename {} to scan", x); }
                 filelist.push(x);
             }
         }
@@ -251,7 +250,8 @@ fn run() -> GenResult<()> {
     let mut count = 0u64;
 
     let mut ws = WalkSetting {
-        verbose: false,
+        verbose: cli_verbose,
+        no_user: cli_no_user,
         limit: clilimit,
         age: TimeSpec {
             newer_than_check: false,
@@ -324,16 +324,17 @@ fn run() -> GenResult<()> {
     };
     let mut user_vec: Vec<U2u> = ws.user_map.iter().map( |(&x,&y)| U2u {size: y, uid:x } ).collect();
     user_vec.sort_by( |b,a| a.size.cmp(&b.size).then(b.uid.cmp(&b.uid)) );
-    if !user_vec.is_empty() {
+    if total>0 {
         println!("File space scanned: {} and {} files in {} seconds", greek(total as f64), count, sec);
+        if !user_vec.is_empty() { 
+            println!("\nSpace used per user");
+            for ue in &user_vec {
+                match get_user_by_uid(ue.uid) {
+                    None => println!("uid{:7} {} ", ue.uid, greek(ue.size as f64)),
+                    Some(user) => println!("{:10} {} ", user.name(), greek(ue.size as f64)),
+                }
 
-        println!("\nSpace used per user");
-        for ue in &user_vec {
-            match get_user_by_uid(ue.uid) {
-                None => println!("uid{:7} {} ", ue.uid, greek(ue.size as f64)),
-                Some(user) => println!("{:10} {} ", user.name(), greek(ue.size as f64)),
             }
-
         }
     } else {
         eprintln!("nothing scanned");
@@ -388,6 +389,7 @@ fn help() {
 eprintln!("\ndu2 [options] dir1 .. dirN
 csv [options] <reads from stdin>
     -h|--help  this help
+    --no-user  cuts off user id level collection - experimental for speed?
     --file-newer-than <time ago spec>
     --file-older-than <time ago spec>
     note: time ago spec example: 1y22d4m means 1 year 22 days and 4 minutes ago
