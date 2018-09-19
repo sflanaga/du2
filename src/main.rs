@@ -4,6 +4,10 @@
 extern crate users;
 extern crate console;
 extern crate separator;
+extern crate chrono;
+
+use chrono::offset::Local;
+use chrono::DateTime;
 
 use std::fs;
 use std::env::args;
@@ -222,13 +226,17 @@ fn run() -> GenResult<()> {
                 let age_i = durFromStr(argv[i].as_str());
                 time_spec.newer_than_check = true;
                 time_spec.newer_than = time_spec.newer_than - age_i;
+                let datetime: DateTime<Local> = time_spec.newer_than.into();
+                println!("consider files newer than: {}", datetime.format("%Y-%m-%d %T"));
             },
             "--file-older-than" => { 
                 i += 1;
                 let age_i = durFromStr(argv[i].as_str());
                 time_spec.older_than_check = true;
                 time_spec.older_than = time_spec.older_than - age_i;
-            },
+                let datetime: DateTime<Local> = time_spec.older_than.into();
+                println!("consider files older than: {}", datetime.format("%Y-%m-%d %T"));
+             },
             "-v" => { 
                 verbose = true;
             },
