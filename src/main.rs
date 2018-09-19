@@ -35,7 +35,7 @@ use std::fmt;
 use separator::Separatable;
 
 mod util;
-use util::{greek};
+use util::{greek,dur_from_str};
 
 static mut COUNT_STATS: usize = 0;
 static mut TICK_GO: usize = 1;
@@ -72,31 +72,10 @@ impl PartialEq for TrackedPath {
     }
 }
 
-fn durFromStr(s: &str) -> Duration {
-    let mut _tmp = String::new();
-    let mut tot_secs = 0u64;
-    for c in s.chars() {
-        if c >= '0' && c <= '9' { _tmp.push(c); }
-        else {
-            tot_secs += match c {
-                's' => _tmp.parse::<u64>().unwrap(),
-                'm' => _tmp.parse::<u64>().unwrap() * 60,
-                'h' => _tmp.parse::<u64>().unwrap() * 3600,
-                'd' => _tmp.parse::<u64>().unwrap() * 24 * 3600,
-                'w' => _tmp.parse::<u64>().unwrap() * 24 * 3600 * 7,
-                'y' => _tmp.parse::<u64>().unwrap() * 24 * 3600 * 365,
-                _ => panic!("char {} not understood", c),
-            };
-            _tmp.clear();
-        }
-    }
-    Duration::from_secs(tot_secs)
-}
-
-
+#[allow(dead_code)]
 fn track_top_n(map: &mut BTreeMap<u64, PathBuf>, path: &Path, size: u64, limit: usize) -> bool {
-    if size <= 0 {
-        return false;
+    if size == 0 {
+        return false
     }
 
     if limit > 0 {
@@ -116,27 +95,25 @@ fn track_top_n(map: &mut BTreeMap<u64, PathBuf>, path: &Path, size: u64, limit: 
             }
         }
     }
-    return false;
+    false
 }
 
 fn track_top_n2(heap: &mut BinaryHeap<TrackedPath>, p: &Path, s: u64, limit: usize) -> bool {
-    if s <= 0 {
-        return false;
+    if s == 0 {
+        return false
     }
 
     if limit > 0 {
         if heap.len() < limit {
             heap.push(TrackedPath{size: s, path: p.to_path_buf()});
             return true
-        } else {
-            if heap.peek().expect("cannot peek when the size is greater than 0!?").size < s {
-                heap.pop();
-                heap.push(TrackedPath{size: s, path: p.to_path_buf()});
-                return true;
-            }
+        } else if heap.peek().expect("cannot peek when the size is greater than 0!?").size < s {
+            heap.pop();
+            heap.push(TrackedPath{size: s, path: p.to_path_buf()});
+            return true;
         }
     }
-    return false;
+    false
 }
 
 fn walk_dir(verbose: bool, limit: usize, age: &TimeSpec, dir: &Path, depth: u32,
@@ -192,7 +169,7 @@ fn walk_dir(verbose: bool, limit: usize, age: &TimeSpec, dir: &Path, depth: u32,
         Err(e) =>
             if verbose { eprintln!("Cannot read dir: {}, error: {} so skipping ", &dir.to_str().unwrap(), &e) },
     }
-    return Ok( (this_tot, this_cnt) );
+    Ok( (this_tot, this_cnt) )
 }
 
 fn run() -> GenResult<()> {
@@ -210,7 +187,7 @@ fn run() -> GenResult<()> {
         older_than: SystemTime::now(),
     };
 
-    let mut age = SystemTime::now();
+    let age = SystemTime::now();
     let mut i = 0;
     while i < argv.len() {
         match &argv[i][..] {
@@ -223,17 +200,17 @@ fn run() -> GenResult<()> {
             },
             "--file-newer-than" => { 
                 i += 1;
-                let age_i = durFromStr(argv[i].as_str());
+                let age_i = dur_from_str(argv[i].as_str());
                 time_spec.newer_than_check = true;
-                time_spec.newer_than = time_spec.newer_than - age_i;
+                time_spec.newer_than -= age_i;
                 let datetime: DateTime<Local> = time_spec.newer_than.into();
                 println!("consider files newer than: {}", datetime.format("%Y-%m-%d %T"));
             },
             "--file-older-than" => { 
                 i += 1;
-                let age_i = durFromStr(argv[i].as_str());
+                let age_i = dur_from_str(argv[i].as_str());
                 time_spec.older_than_check = true;
-                time_spec.older_than = time_spec.older_than - age_i;
+                time_spec.older_than -= age_i;
                 let datetime: DateTime<Local> = time_spec.older_than.into();
                 println!("consider files older than: {}", datetime.format("%Y-%m-%d %T"));
              },
@@ -247,7 +224,7 @@ fn run() -> GenResult<()> {
         }
         i += 1;
     }
-    if filelist.len() <= 0 {
+    if filelist.is_empty() {
         println!("Using ./ as top directory");
         filelist.push("./");
     }
@@ -285,7 +262,7 @@ fn run() -> GenResult<()> {
                             std::io::stdout().flush().unwrap();
                             last_cnt = COUNT_STATS;
                             thread::sleep(Duration::from_millis(200));
-                            term.clear_line();
+                            term.clear_line().unwrap();
                             if TICK_GO == 0 {
                                 break;
                             }
@@ -312,17 +289,16 @@ fn run() -> GenResult<()> {
     //let (total,count) = walk_dir(limit, &path, 0, &mut user_map, &mut top_dir,  &mut top_cnt_dir,  &mut top_cnt_file,  &mut top_dir_overall, &mut top_files)?;
 
     let elapsed = start_f.elapsed();
-    let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
-
+    let sec = (elapsed.as_secs() as f64)+((elapsed.subsec_nanos() as f64)/1_000_000_000.0);
 
     #[derive(Debug)]
-    struct u2u {
+    struct U2u {
         size: u64,
         uid: u32
     };
-    let mut user_vec: Vec<u2u> = user_map.iter().map( |(&x,&y)| u2u {size: y, uid:x } ).collect();
+    let mut user_vec: Vec<U2u> = user_map.iter().map( |(&x,&y)| U2u {size: y, uid:x } ).collect();
     user_vec.sort_by( |b,a| a.size.cmp(&b.size).then(b.uid.cmp(&b.uid)) );
-    if user_vec.len() > 0 {
+    if !user_vec.is_empty() {
         println!("File space scanned: {} and {} files in {} seconds", greek(total as f64), count, sec);
 
         println!("\nSpace used per user");
@@ -375,8 +351,6 @@ fn main() {
     }
 }
 
-
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 pub fn version() -> &'static str {
     concat!(env!("CARGO_PKG_VERSION"), include_str!(concat!(env!("OUT_DIR"), "/commit-info.txt")))
