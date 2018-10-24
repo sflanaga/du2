@@ -126,60 +126,68 @@ struct WalkSetting {
     top_dir: BinaryHeap<TrackedPath>,
     top_cnt_dir: BinaryHeap<TrackedPath>,
     top_cnt_file: BinaryHeap<TrackedPath>,
+    top_cnt_overall: BinaryHeap<TrackedPath>,
     top_dir_overall: BinaryHeap<TrackedPath>,
     top_files: BinaryHeap<TrackedPath>
 }    
 
 
 fn walk_dir(ws: &mut WalkSetting, dir: &Path, depth: u32) -> GenResult<(u64,u64)> {
-    let itr = fs::read_dir(dir);
+    let mut paths = vec![];
+    {       
+        // collect the entries up front to close the read dir right away 
+        let itr = fs::read_dir(dir);
+        match itr {
+            Ok(itr) => {
+                paths = itr.collect();  
+            },
+            Err(e) =>
+                if ws.verbose { eprintln!("Cannot read dir: {}, error: {} so skipping ", &dir.to_str().unwrap(), &e) 
+            },
+        }
+    }
     let mut this_tot = 0;
     let mut this_cnt = 0;
-    match itr {
-        Ok(itr) => {
-            let mut local_tot = 0u64;
-            let mut local_cnt_file = 0u64;
-            let mut local_cnt_dir = 0u64;
-            let paths : Vec<_> = itr.collect();
-            for e in paths {
-                let e = e?;
-                let meta = e.metadata()?;
-                let p = e.path();
-                if meta.is_file() {
-                    let f_age = meta.modified().unwrap();
-                    if (!ws.age.newer_than_check || ws.age.newer_than < f_age ) &&
-                       (!ws.age.older_than_check || ws.age.older_than > f_age) {
-                        let s = meta.len();
-                        this_tot += s;
-                        local_tot += s;
-                        if !ws.no_user {
-                            let uid = meta.st_uid();
-                            *ws.user_map.entry(uid).or_insert(0) += s;
-                        }
-                        local_cnt_file += 1;
-                        this_cnt +=1;
 
-                        unsafe { COUNT_STATS +=1; }
-                        track_top_n2(&mut ws.top_files, &p, s, ws.limit); 
-                        // println!("{}", p.to_str().unwrap());
-                    }
-                } else if meta.is_dir() {
-                    local_cnt_dir += 1;
-                    unsafe { COUNT_STATS +=1; }
-                    match walk_dir(ws, &p, depth+1) {
-                        Ok( (that_tot, that_cnt) ) => { this_tot += that_tot; this_cnt += that_cnt; },
-                        Err(e) => if ws.verbose { eprint!("error trying walk {}, error = {} but continuing",p.to_string_lossy(), e) },
-                    };
+    let mut local_tot = 0u64;
+    let mut local_cnt_file = 0u64;
+    let mut local_cnt_dir = 0u64;
+    for e in paths {
+        let e = e?;
+        let meta = e.metadata()?;
+        let p = e.path();
+        if meta.is_file() {
+            unsafe { COUNT_STATS +=1; }
+            let f_age = meta.modified().unwrap();
+            if (!ws.age.newer_than_check || ws.age.newer_than < f_age ) &&
+               (!ws.age.older_than_check || ws.age.older_than > f_age) {
+                let s = meta.len();
+                this_tot += s;
+                local_tot += s;
+                if !ws.no_user {
+                    let uid = meta.st_uid();
+                    *ws.user_map.entry(uid).or_insert(0) += s;
                 }
+                local_cnt_file += 1;
+                this_cnt +=1;
+
+                track_top_n2(&mut ws.top_files, &p, s, ws.limit); 
+                // println!("{}", p.to_str().unwrap());
             }
-            track_top_n2(&mut ws.top_dir, &dir, local_tot, ws.limit); // track single immediate space
-            track_top_n2(&mut ws.top_cnt_dir, &dir, local_cnt_dir, ws.limit); // track dir with most # of dir right under it
-            track_top_n2(&mut ws.top_cnt_file, &dir, local_cnt_file, ws.limit); // track dir with most # of file right under it
-            track_top_n2(&mut ws.top_dir_overall, &dir, this_tot, ws.limit); // track top dirs overall - main will be largest
-        },
-        Err(e) =>
-            if ws.verbose { eprintln!("Cannot read dir: {}, error: {} so skipping ", &dir.to_str().unwrap(), &e) },
+        } else if meta.is_dir() {
+            local_cnt_dir += 1;
+            unsafe { COUNT_STATS +=1; }
+            match walk_dir(ws, &p, depth+1) {
+                Ok( (that_tot, that_cnt) ) => { this_tot += that_tot; this_cnt += that_cnt; },
+                Err(e) => if ws.verbose { eprint!("error trying walk {}, error = {} but continuing",p.to_string_lossy(), e) },
+            };
+        }
     }
+    track_top_n2(&mut ws.top_dir, &dir, local_tot, ws.limit); // track single immediate space
+    track_top_n2(&mut ws.top_cnt_dir, &dir, local_cnt_dir, ws.limit); // track dir with most # of dir right under it
+    track_top_n2(&mut ws.top_cnt_file, &dir, local_cnt_file, ws.limit); // track dir with most # of file right under it
+    track_top_n2(&mut ws.top_cnt_overall, &dir, this_cnt, ws.limit); // track overall count
+    track_top_n2(&mut ws.top_dir_overall, &dir, this_tot, ws.limit); // track overall size
     Ok( (this_tot, this_cnt) )
 }
 
@@ -189,17 +197,27 @@ fn run() -> GenResult<()> {
     //if argv.len() == 1 { help(); }
 
     let filelist = &mut vec![];
-    let mut cli_verbose = false;
-    let mut cli_no_user = false;
-    let mut clilimit = 25;
-    let mut ticker_time = 200u64;
-    let mut time_spec = TimeSpec {
-        newer_than_check: false,
-        older_than_check: false,
-        newer_than: SystemTime::now(),
-        older_than: SystemTime::now(),
+
+    let mut ws = WalkSetting {
+        verbose: false,
+        no_user: false,
+        limit: 25,
+        age: TimeSpec {
+            newer_than_check: false,
+            older_than_check: false,
+            newer_than: SystemTime::now(),
+            older_than: SystemTime::now(),
+        },
+        user_map: BTreeMap::new(),
+        top_dir: BinaryHeap::new(),
+        top_cnt_dir: BinaryHeap::new(),
+        top_cnt_file: BinaryHeap::new(),
+        top_cnt_overall: BinaryHeap::new(),
+        top_dir_overall: BinaryHeap::new(),
+        top_files: BinaryHeap::new(),
     };
 
+    let mut ticker_time = 200u64;
     let age = SystemTime::now();
     let mut i = 0;
     while i < argv.len() {
@@ -209,7 +227,7 @@ fn run() -> GenResult<()> {
             },
             "-n" => { 
                 i += 1;
-                clilimit = argv[i].parse::<usize>().unwrap();
+                ws.limit = argv[i].parse::<usize>().unwrap();
             },
             "-i" => { 
                 i += 1;
@@ -218,27 +236,27 @@ fn run() -> GenResult<()> {
             "--file-newer-than" => { 
                 i += 1;
                 let age_i = dur_from_str(argv[i].as_str());
-                time_spec.newer_than_check = true;
-                time_spec.newer_than -= age_i;
-                let datetime: DateTime<Local> = time_spec.newer_than.into();
+                ws.age.newer_than_check = true;
+                ws.age.newer_than -= age_i;
+                let datetime: DateTime<Local> = ws.age.newer_than.into();
                 println!("consider files newer than: {}", datetime.format("%Y-%m-%d %T"));
             },
             "--file-older-than" => { 
                 i += 1;
                 let age_i = dur_from_str(argv[i].as_str());
-                time_spec.older_than_check = true;
-                time_spec.older_than -= age_i;
-                let datetime: DateTime<Local> = time_spec.older_than.into();
+                ws.age.older_than_check = true;
+                ws.age.older_than -= age_i;
+                let datetime: DateTime<Local> = ws.age.older_than.into();
                 println!("consider files older than: {}", datetime.format("%Y-%m-%d %T"));
              },
             "-v" => { 
-                cli_verbose = true;
+                ws.verbose = true;
             },
             "--no-user" => { 
-                cli_no_user = true;
+                ws.no_user = true;
             },
             x => {
-                if cli_verbose { println!("adding filename {} to scan", x); }
+                if ws.verbose { println!("adding filename {} to scan", x); }
                 filelist.push(x);
             }
         }
@@ -254,25 +272,6 @@ fn run() -> GenResult<()> {
     let mut total = 0u64;
     let mut count = 0u64;
 
-    let mut ws = WalkSetting {
-        verbose: cli_verbose,
-        no_user: cli_no_user,
-        limit: clilimit,
-        age: TimeSpec {
-            newer_than_check: false,
-            older_than_check: false,
-            newer_than: SystemTime::now(),
-            older_than: SystemTime::now(),
-        },
-        user_map: BTreeMap::new(),
-        top_dir: BinaryHeap::new(),
-        top_cnt_dir: BinaryHeap::new(),
-        top_cnt_file: BinaryHeap::new(),
-        top_dir_overall: BinaryHeap::new(),
-        top_files: BinaryHeap::new(),
-    };
-
-
     for path in filelist {
         let path = Path::new(& path);
         if path.exists() {
@@ -282,22 +281,23 @@ fn run() -> GenResult<()> {
                 let thread = thread::spawn(move || {
                     if !console::user_attended() {return; }
                     let term = Term::stdout();
-                    let mut last_cnt = 0usize;
-                    let mut ticks = 1usize;
+                    let mut last_cnt = 0f64;
+                    let mut ticks = 1f64;
                     loop {
                         unsafe {
-                            let delta = (COUNT_STATS - last_cnt)*5;
-                            let allrate = COUNT_STATS*5/ticks;
-                            let now_cnt = COUNT_STATS;
+                            let mult = 1000.0 / ticker_time as f64;
+                            let delta = (COUNT_STATS as f64 - last_cnt)*mult;
+                            let allrate = (COUNT_STATS as f64)*mult/ticks;
+                            let now_cnt = COUNT_STATS as f64;
                             print!("nodes: {} spot rate/s: {} all rate/s: {}", now_cnt.separated_string(), delta.separated_string(), allrate.separated_string());
                             std::io::stdout().flush().unwrap();
-                            last_cnt = COUNT_STATS;
+                            last_cnt = COUNT_STATS as f64;
                             thread::sleep(Duration::from_millis(ticker_time));
                             term.clear_line().unwrap();
                             if TICK_GO == 0 {
                                 break;
                             }
-                            ticks += 1;
+                            ticks += 1.0;
                          }
                     }
                 });
@@ -351,14 +351,17 @@ fn run() -> GenResult<()> {
         println!("{:10} {}", greek(v.size as f64),v.path.to_string_lossy());
     }
 
-
     println!("\nTop dir size recursive:");
     for v in ws.top_dir_overall.into_sorted_vec() {
         println!("{:10} {}", greek(v.size as f64),v.path.to_string_lossy());
     }
 
+    println!("\nTop count of files  recursive:");
+    for v in ws.top_cnt_overall.into_sorted_vec() {
+        println!("{:10} {}", v.size,v.path.to_string_lossy());
+    }
 
-    println!("\nTop counts of files in a single directory:");
+     println!("\nTop counts of files in a single directory:");
     for v in ws.top_cnt_file.into_sorted_vec() {
         println!("{:10} {}", v.size,v.path.to_string_lossy());
     }
