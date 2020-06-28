@@ -48,15 +48,15 @@ pub struct ParLsCfg {
     /// Directory to search
     pub dir: PathBuf,
 
-    #[structopt(short = "u", long = "usage_trees")]
+    #[structopt(short = "u", long = "usage-trees")]
     /// Write disk usage summary
     pub usage_mode: bool,
 
-    #[structopt(short = "l", name = "list_files")]
+    #[structopt(short = "l", name = "list-files")]
     /// Write file list
     pub list_files: bool,
 
-    #[structopt(short = "n", name = "top_n_limit", default_value("10"))]
+    #[structopt(short = "n", name = "top-n-limit", default_value("10"))]
     /// Report top usage limit
     pub limit: usize,
 
@@ -64,17 +64,17 @@ pub struct ParLsCfg {
     /// Disk usage mode - do not write the files found
     pub delimiter: char,
 
-    #[structopt(short = "t", long = "worker_threads", default_value("0"))]
+    #[structopt(short = "t", long = "worker-threads", default_value("0"))]
     /// Number worker threads
     ///
     /// defaults to 0 which means # of cpus or at least 4
     pub no_threads: usize,
 
-    #[structopt(long = "file_newer_than", parse(try_from_str = parse_timespec))]
+    #[structopt(long = "file-newer-than", parse(try_from_str = parse_timespec))]
     /// Only count/sum entries newer than this age
     pub file_newer_than: Option<SystemTime>,
 
-    #[structopt(long = "file_older_than", parse(try_from_str = parse_timespec))]
+    #[structopt(long = "file-older-than", parse(try_from_str = parse_timespec))]
     /// Only count/sum entries older than this age
     pub file_older_than: Option<SystemTime>,
 
@@ -86,7 +86,7 @@ pub struct ParLsCfg {
     /// Note this only applies to FILE paths and not directories.
     pub re: Option<Regex>,
 
-    #[structopt(long = "exclude_re", parse(try_from_str = parse_regex))]
+    #[structopt(long = "exclude-re", parse(try_from_str = parse_regex))]
     /// Exclude FILEs that match this RE
     ///
     /// Note this only applies to FILEs paths and not directories.
@@ -96,7 +96,7 @@ pub struct ParLsCfg {
     /// Verbosity - use more than one v for greater detail
     pub verbose: usize,
 
-    #[structopt(short = "i", long = "ticker_interval", default_value("200"))]
+    #[structopt(short = "i", long = "ticker-interval", default_value("200"))]
     /// Interval at which stats are written - 0 means no ticker is run
     pub ticker_interval: u64,
 
