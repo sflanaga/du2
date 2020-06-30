@@ -1,4 +1,4 @@
-```
+
 du2 0.2.0
 Fast parallel file system lister / usage statistics summary
 
@@ -17,7 +17,7 @@ directories up the tree containing ALL directories for usage summaries. This tre
 proportional to the tree directory count.
 
 Symbolic links are not followed
-
+```
 USAGE:
     du2.exe [OPTIONS] <DIRECTORY>
 
