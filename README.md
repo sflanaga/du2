@@ -1,5 +1,5 @@
 
-du2 0.2.0
+du2 0.2.1
 Fast parallel file system lister / usage statistics summary
 
 Latency vs throughput: The theory here is that parallel listing overcomes latency issues on remote files systems by
@@ -23,6 +23,7 @@ USAGE:
 
 OPTIONS:
     -d, --delimiter <delimiter>                Disk usage mode - do not write the files found [default: |]
+        --die-in <die-in>                      write cpu time consumed by each thread
         --exclude-re <exclude-re>              Exclude FILEs that match this RE
         --file-newer-than <file-newer-than>    Only count/sum entries newer than this age
         --file-older-than <file-older-than>    Only count/sum entries older than this age
@@ -33,15 +34,16 @@ OPTIONS:
         --progress                             Writes progress stats on every ticker interval
         --re <re>                              Keep only FILEs that match this RE
         --write_thread_status                  Writes thread status every ticker interval - used to debug things
-        --t_status_on_key                      Writes thread status when stdin sees a line entered by user
+        --t-status-on-key                      Writes thread status when stdin sees a line entered by user
     -i, --ticker-interval <ticker-interval>    Interval at which stats are written - 0 means no ticker is run [default:
                                                200]
     -n <top-n-limit>                           Report top usage limit [default: 10]
     -u, --usage-trees                          Write disk usage summary
     -V, --version                              Prints version information
     -v                                         Verbosity - use more than one v for greater detail
-        --write_thread_cpu_time                write cpu time consumed by each thread
+        --write-thread-cpu-time                write cpu time consumed by each thread
 
 ARGS:
     <DIRECTORY>    Directory to search
+
 ```
