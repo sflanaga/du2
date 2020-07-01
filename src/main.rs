@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 #![allow(unused_imports)]
 
 use std::cmp::max;
@@ -25,7 +26,7 @@ use lazy_static::lazy_static;
 use util::greek;
 use worker_queue::*;
 
-use crate::tstatus::{ThreadStatus, ThreadTracker};
+use crate::tstatus::{ThreadStatus, ThreadTracker, spawn_death_timeout_thread};
 use crate::util::multi_extension;
 use crate::cli::{CLI,EXE};
 
@@ -661,9 +662,15 @@ fn parls() -> Result<()> {
         total_usage: 0u64,
     };
 
+
     let mut tt = ThreadTracker::new();
     let mut main_status = tt.setup_thread("main", "setup");
     main_status.register("registered");
+
+    if let Some(die_dur) = CLI.die_in {
+        spawn_death_timeout_thread(die_dur, &mut tt);
+    };
+
 
     q.push(Some(CLI.dir.to_path_buf())).with_context(|| format!("Cannot push top path: {}", CLI.dir.display()))?;
     let startout = Instant::now();

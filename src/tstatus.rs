@@ -64,7 +64,7 @@ impl ThreadTracker {
     pub fn eprint_status(&self) {
         for ts in self.list.iter().enumerate() {
             let g_ts = ts.1.status.lock().unwrap();
-            eprintln!("index: {:2} {}  tid:  {:6}  status: \"{}\"", ts.0, &g_ts.name, &g_ts.tid, &g_ts.state);
+            eprintln!("index: {:2} {:<10} tid: {:6}  status: \"{}\"", ts.0, &g_ts.name, &g_ts.tid, &g_ts.state);
         }
     }
 
@@ -86,5 +86,16 @@ impl ThreadTracker {
             self.eprint_status();
         }
     }
+}
 
+pub fn spawn_death_timeout_thread(die_dur: Duration, tt: &mut ThreadTracker) {
+    let mut die_status = tt.setup_thread("die-in", "starting...");
+    thread::spawn(move || {
+        die_status.register("started");
+        eprintln!("die thread on - die in {:.2} secs", die_dur.as_secs_f64());
+        die_status.set_state(&format!("waiting to die after {:.2} secs", die_dur.as_secs_f64()));
+        thread::sleep(die_dur);
+        eprintln!("*** SELF TERMINATION TIMEOUT ***");
+        std::process::exit(1);
+    });
 }

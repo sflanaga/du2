@@ -108,13 +108,17 @@ pub struct ParLsCfg {
     /// Writes thread status every ticker interval - used to debug things
     pub t_status_interval: bool,
 
-    #[structopt(long = "t_status_on_key", conflicts_with("write_thread_status"))]
+    #[structopt(long = "t-status-on-key", conflicts_with("write_thread_status"))]
     /// Writes thread status when stdin sees a line entered by user
     pub t_status_on_key: bool,
 
-    #[structopt(long = "write_thread_cpu_time")]
+    #[structopt(long = "write-thread-cpu-time")]
     /// write cpu time consumed by each thread
     pub write_thread_cpu_time: bool,
+
+    #[structopt(long = "die-in", parse(try_from_str = dur_from_str))]
+    /// write cpu time consumed by each thread
+    pub die_in: Option<Duration>,
 
     #[structopt(skip)]
     pub update_status: bool,
@@ -131,6 +135,11 @@ fn parse_timespec(str: &str) -> Result<SystemTime> {
     let dur = dur_from_str(str)?;
     let ret = SystemTime::now() - dur;
     Ok(ret)
+}
+
+fn parse_timespec_duration(str: &str) -> Result<Duration> {
+    let dur = dur_from_str(str)?;
+    Ok(dur)
 }
 
 fn dir_check(s: &str) -> Result<PathBuf> {
