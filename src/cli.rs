@@ -8,7 +8,7 @@ use std::cmp::max;
 use regex::Regex;
 
 lazy_static! {
-    pub static ref CLI: ParLsCfg = {
+    pub static ref APP: ParLsCfg = {
        get_cli()
     };
     pub static ref EXE: String = get_exe_name();

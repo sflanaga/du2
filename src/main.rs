@@ -28,7 +28,7 @@ use worker_queue::*;
 
 use crate::tstatus::{ThreadStatus, ThreadTracker, spawn_death_timeout_thread};
 use crate::util::multi_extension;
-use crate::cli::{CLI,EXE};
+use crate::cli::{APP,EXE};
 
 mod tstatus;
 mod worker_queue;
@@ -58,7 +58,7 @@ fn read_dir_thread(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut WorkerQ
         }
     }
 
-    if CLI.write_thread_cpu_time {
+    if APP.write_thread_cpu_time {
         eprintln!("read dir thread cpu time: {:.3}", t_cpu_time.elapsed().as_secs_f64());
     }
 }
@@ -68,19 +68,19 @@ fn _read_dir_worker(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut Worker
     let mut pops_done = 0;
     t_status.register("started");
     loop {
-        if CLI.update_status {
+        if APP.update_status {
             t_status.set_state("pop blocked");
         }
         match queue.pop() {
             None => break,
             Some(p) => { //println!("path: {}", p.to_str().unwrap()),
                 pops_done += 1;
-                if CLI.verbose > 1 {
+                if APP.verbose > 1 {
                     if p.to_str().is_none() { break; } else { eprintln!("{}: listing for {}", *EXE, p.to_str().unwrap()); }
                 }
                 let mut other_dirs = vec![];
                 let mut metalist = vec![];
-                if CLI.update_status {
+                if APP.update_status {
                     t_status.set_state(&format!("at {} pops; reading dir: {}", pops_done, p.display()));
                 }
                 let dir_itr = match std::fs::read_dir(&p) {
@@ -100,7 +100,7 @@ fn _read_dir_worker(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut Worker
                         }
                         Ok(md) => md,
                     };
-                    if CLI.verbose > 3 {
+                    if APP.verbose > 3 {
                         eprintln!("{}: raw meta: {:#?}", *EXE, &md);
                     }
 
@@ -111,27 +111,27 @@ fn _read_dir_worker(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut Worker
                             //
                             // re filters
                             //
-                            if let Some(re) = &CLI.re {
+                            if let Some(re) = &APP.re {
                                 let s = path.to_str().unwrap();
                                 if !re.is_match(path.to_str().unwrap()) {
-                                    if CLI.verbose > 1 {
+                                    if APP.verbose > 1 {
                                         eprintln!("{}: filtered file not matching re: {}", *EXE, s);
                                     }
                                     continue;
                                 }
-                                if CLI.verbose > 1 {
+                                if APP.verbose > 1 {
                                     eprintln!("{}: NOT filtered file DOES match re: {}", *EXE, s);
                                 }
                             }
-                            if let Some(re) = &CLI.exclude_re {
+                            if let Some(re) = &APP.exclude_re {
                                 let s = path.to_str().unwrap();
                                 if re.is_match(path.to_str().unwrap()) {
-                                    if CLI.verbose > 1 {
+                                    if APP.verbose > 1 {
                                         eprintln!("{}: filtered path matching exclude_re: {}", *EXE, s);
                                     }
                                     continue;
                                 }
-                                if CLI.verbose > 1 {
+                                if APP.verbose > 1 {
                                     eprintln!("{}: NOT filtered file DOES NOT match re: {}", *EXE, s);
                                 }
                             }
@@ -139,7 +139,7 @@ fn _read_dir_worker(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut Worker
                             // age filters
                             //
                             let f_age = md.modified()?;
-                            if CLI.file_newer_than.map_or(true, |x| x < f_age) && CLI.file_older_than.map_or(true, |x| x > f_age) {
+                            if APP.file_newer_than.map_or(true, |x| x < f_age) && APP.file_older_than.map_or(true, |x| x > f_age) {
                                 metalist.push((path.clone(), md.clone()));
                                 //write_meta(&path, &md);
                             }
@@ -148,16 +148,16 @@ fn _read_dir_worker(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut Worker
                             other_dirs.push(path);
                         }
                     } else {
-                        if CLI.verbose > 0 { eprintln!("{}: skipping sym link: {}", *EXE, path.to_string_lossy()); }
+                        if APP.verbose > 0 { eprintln!("{}: skipping sym link: {}", *EXE, path.to_string_lossy()); }
                     }
                 }
 
-                if CLI.update_status {
+                if APP.update_status {
                     t_status.set_state(&format!("push meta, at {} pops", pops_done));
                 }
                 out_q.push(Some(metalist))?;
 
-                if CLI.update_status {
+                if APP.update_status {
                     t_status.set_state(&format!("pushing {} dirs and at {} pops", other_dirs.len(), pops_done));
                 }
                 for d in other_dirs {
@@ -166,7 +166,7 @@ fn _read_dir_worker(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut Worker
             }
         }
     }
-    if CLI.update_status {
+    if APP.update_status {
         t_status.set_state("exit");
     }
     Ok(())
@@ -185,14 +185,14 @@ fn write_meta(path: &PathBuf, meta: &Metadata) -> Result<()> {
     };
     match get_user_by_uid(meta.uid()) {
         None => {
-            println!("{}{}{}{}{}{}{:o}{}{}{}{}", file_type, CLI.delimiter, path.to_string_lossy(),
-                     CLI.delimiter, meta.size(), CLI.delimiter, meta.permissions().mode(), CLI.delimiter,
-                     meta.uid(), CLI.delimiter, meta.modified()?.duration_since(SystemTime::UNIX_EPOCH)?.as_secs());
+            println!("{}{}{}{}{}{}{:o}{}{}{}{}", file_type, APP.delimiter, path.to_string_lossy(),
+                     APP.delimiter, meta.size(), APP.delimiter, meta.permissions().mode(), APP.delimiter,
+                     meta.uid(), APP.delimiter, meta.modified()?.duration_since(SystemTime::UNIX_EPOCH)?.as_secs());
         }
         Some(user) => {
-            println!("{}{}{}{}{}{}{:o}{}{}{}{}", file_type, CLI.delimiter, path.to_string_lossy(),
-                     CLI.delimiter, meta.size(), CLI.delimiter, meta.permissions().mode(), CLI.delimiter,
-                     user.name().to_string_lossy(), CLI.delimiter, meta.modified()?.duration_since(SystemTime::UNIX_EPOCH)?.as_secs());
+            println!("{}{}{}{}{}{}{:o}{}{}{}{}", file_type, APP.delimiter, path.to_string_lossy(),
+                     APP.delimiter, meta.size(), APP.delimiter, meta.permissions().mode(), APP.delimiter,
+                     user.name().to_string_lossy(), APP.delimiter, meta.modified()?.duration_since(SystemTime::UNIX_EPOCH)?.as_secs());
         }
     };
     Ok(())
@@ -200,16 +200,16 @@ fn write_meta(path: &PathBuf, meta: &Metadata) -> Result<()> {
 
 #[cfg(target_family = "unix")]
 fn write_meta_header() {
-    println!("{}{}{}{}{}{}{}{}{}{}{}", "type", CLI.delimiter, "path",
-             CLI.delimiter, "size", CLI.delimiter, "permissions", CLI.delimiter,
-             "user", CLI.delimiter,
+    println!("{}{}{}{}{}{}{}{}{}{}{}", "type", APP.delimiter, "path",
+             APP.delimiter, "size", APP.delimiter, "permissions", APP.delimiter,
+             "user", APP.delimiter,
              "epoch_last_modification");
 }
 
 #[cfg(target_family = "windows")]
 fn write_meta_header() {
-    println!("{}{}{}{}{}{}{}{}{}", "type", CLI.delimiter, "path",
-             CLI.delimiter, "size", CLI.delimiter, "readonly", CLI.delimiter,
+    println!("{}{}{}{}{}{}{}{}{}", "type", APP.delimiter, "path",
+             APP.delimiter, "size", APP.delimiter, "readonly", APP.delimiter,
              "epoch_last_modification");
 }
 #[cfg(target_family = "windows")]
@@ -220,8 +220,8 @@ fn write_meta(path: &PathBuf, meta: &Metadata) -> Result<()> {
         x if x.is_symlink() => 's',
         _ => 'N',
     };
-    println!("{}{}{}{}{}{}{}{}{}", file_type, CLI.delimiter, path.display(),
-             CLI.delimiter, meta.len(), CLI.delimiter, meta.permissions().readonly(), CLI.delimiter,
+    println!("{}{}{}{}{}{}{}{}{}", file_type, APP.delimiter, path.display(),
+             APP.delimiter, meta.len(), APP.delimiter, meta.permissions().readonly(), APP.delimiter,
              meta.modified()?.duration_since(SystemTime::UNIX_EPOCH)?.as_secs());
     Ok(())
 }
@@ -275,6 +275,51 @@ impl PartialEq for TrackedExtension {
 }
 
 #[derive(Debug, Clone)]
+pub struct AgeRange {
+    oldest_file_direct: Option<Duration>,
+    oldest_file_recursive: Option<Duration>,
+    newest_file_direct: Option<Duration>,
+    newest_file_recursive: Option<Duration>,
+}
+
+impl AgeRange {
+    pub fn new() -> Self {
+        AgeRange{
+            oldest_file_direct: None,
+            oldest_file_recursive: None,
+            newest_file_direct: None,
+            newest_file_recursive: None,
+        }
+    }
+    pub fn update_direct(&mut self, new: &Duration) {
+        Self::max_age(&mut self.oldest_file_direct, &new);
+        Self::min_age(&mut self.newest_file_direct, &new);
+    }
+    pub fn update_recursive(&mut self, new: &Duration) {
+        Self::max_age(&mut self.oldest_file_recursive, &new);
+        Self::min_age(&mut self.newest_file_recursive, &new);
+    }
+    fn min_age(store: &mut Option<Duration>, new: &Duration) {
+        match store {
+            None => *store = Some(*new),
+            Some(s) => if new < s {
+                *store = Some(*new);
+            },
+        }
+    }
+
+    fn max_age(store: &mut Option<Duration>, new: &Duration) {
+        match store {
+            None => *store = Some(*new),
+            Some(s) => if new > s {
+                *store = Some(*new);
+            },
+        }
+    }
+}
+
+
+#[derive(Debug, Clone)]
 struct DirStats {
     size_directly: u64,
     size_recursively: u64,
@@ -282,12 +327,13 @@ struct DirStats {
     file_count_recursively: u64,
     dir_count_directly: u64,
     dir_count_recursively: u64,
+    age_range: AgeRange,
 }
 
 
 impl DirStats {
     pub fn new() -> Self {
-        DirStats { size_recursively: 0, size_directly: 0, file_count_recursively: 0, file_count_directly: 0, dir_count_directly: 0, dir_count_recursively: 0 }
+        DirStats { size_recursively: 0, size_directly: 0, file_count_recursively: 0, file_count_directly: 0, dir_count_directly: 0, dir_count_recursively: 0 , age_range: AgeRange::new(), }
     }
 }
 
@@ -340,11 +386,28 @@ fn track_top_n(heap: &mut BinaryHeap<TrackedPath>, p: &PathBuf, s: u64, limit: u
     }
 }
 
+fn child_is_higher_than_base_dir(base: &Path, child: &Path) -> Result<bool> {
+    let base_s = base.to_string_lossy();
+    let child_s = child.to_string_lossy();
+
+    // we are trying to avoid canonicalize() as it appears to access the file system
+    // further trying to do this on OsStr seems pointless - no iterator or access
+    // many others access the bytes of OsStr and compare things.... why is it not std?
+    if child_s.starts_with(&base_s[..]) {
+        Ok(false)
+    } else {
+        Ok(true)
+    }
+}
+
 //noinspection ALL
 fn perk_up_disk_usage(top: &mut AllStats, list: &Vec<(PathBuf, Metadata)>) -> Result<()> {
     if list.len() > 0 {
         if let Some(mut parent) = list[0].0.ancestors().skip(1).next() {
-            if parent == CLI.dir { return Ok(()); }
+            if child_is_higher_than_base_dir(&APP.dir, &parent)? {
+                return Ok(())
+            }
+
             let dstats = {
                 let mut dstats: &mut DirStats = if top.dtree.contains_key(parent) {
                     top.dtree.get_mut(parent).unwrap()
@@ -357,7 +420,7 @@ fn perk_up_disk_usage(top: &mut AllStats, list: &Vec<(PathBuf, Metadata)>) -> Re
                     let filetype = afile.1.file_type();
                     let f_age = afile.1.modified()?;
 
-                    track_top_n(&mut top.top_files, &afile.0.to_path_buf(), afile.1.len(), CLI.limit);
+                    track_top_n(&mut top.top_files, &afile.0.to_path_buf(), afile.1.len(), APP.limit);
 
                     #[cfg(target_family = "windows")]
                         let uid = 0;
@@ -369,7 +432,7 @@ fn perk_up_disk_usage(top: &mut AllStats, list: &Vec<(PathBuf, Metadata)>) -> Re
                     top.total_usage += afile.1.len();
 
                     if filetype.is_file() {
-                        if CLI.file_newer_than.map_or(true, |x| x < f_age) && CLI.file_older_than.map_or(true, |x| x > f_age) {
+                        if APP.file_newer_than.map_or(true, |x| x < f_age) && APP.file_older_than.map_or(true, |x| x > f_age) {
                             if let Some(ext) = multi_extension(&afile.0) {
                                 match top.extensions.get_mut(ext.as_ref()) {
                                     Some(ext_sz) => *ext_sz += afile.1.len(),
@@ -383,7 +446,7 @@ fn perk_up_disk_usage(top: &mut AllStats, list: &Vec<(PathBuf, Metadata)>) -> Re
                             dstats.size_recursively += afile.1.len();
                         }
                     } else if filetype.is_dir() {
-                        if CLI.file_newer_than.map_or(true, |x| x < f_age) && CLI.file_older_than.map_or(true, |x| x > f_age) {
+                        if APP.file_newer_than.map_or(true, |x| x < f_age) && APP.file_older_than.map_or(true, |x| x > f_age) {
                             dstats.dir_count_directly += 1;
                             dstats.dir_count_recursively += 1;
                             // eprintln!("dir size {} :: {}", afile.0.display(), afile.1.len());
@@ -397,7 +460,7 @@ fn perk_up_disk_usage(top: &mut AllStats, list: &Vec<(PathBuf, Metadata)>) -> Re
             // go up tree and add stuff
             loop {
                 if let Some(nextpar) = parent.ancestors().skip(1).next() {
-                    if parent == CLI.dir { break; }
+                    if parent == APP.dir { break; }
 
                     if nextpar == parent {
                         break;
@@ -438,13 +501,13 @@ fn file_track(startout: Instant,
     let sub_count = count.clone();
     let sub_out_q = out_q.clone();
     let sub_work_q = work_q.clone();
-    if CLI.progress {
+    if APP.progress {
         thread::spawn(move || {
             let mut last = 0;
             let start_f = Instant::now();
 
             loop {
-                thread::sleep(Duration::from_millis(CLI.ticker_interval));
+                thread::sleep(Duration::from_millis(APP.ticker_interval));
                 let thiscount = sub_count.load(Ordering::Relaxed);
 
                 let elapsed = start_f.elapsed();
@@ -464,34 +527,34 @@ fn file_track(startout: Instant,
     }
 
     let mut pop_count = 0;
-    if CLI.list_files {
+    if APP.list_files {
         write_meta_header();
     }
 
     loop {
         //let mut c_t_status = t_status;
-        if CLI.update_status {
+        if APP.update_status {
             t_status.set_state(&format!("wait at pop: nodes: {}", pop_count));
         }
         match out_q.pop() {
             Some(list) => {
                 pop_count += list.len();
-                if CLI.update_status {
+                if APP.update_status {
                     t_status.set_state(&format!("perking pop: {}", pop_count));
                 }
 
                 count.fetch_add(list.len(), Ordering::Relaxed);
-                if CLI.usage_mode {
-                    if CLI.update_status {
+                if APP.usage_mode {
+                    if APP.update_status {
                         t_status.set_state("recording stats");
                     }
                     perk_up_disk_usage(stats, &list)?;
                 }
-                if CLI.list_files {
+                if APP.list_files {
                     for (path, md) in list {
                         let f_age = md.modified()?;
-                        if CLI.file_newer_than.map_or(true, |x| x < f_age) && CLI.file_older_than.map_or(true, |x| x > f_age) {
-                            if CLI.t_status_interval {
+                        if APP.file_newer_than.map_or(true, |x| x < f_age) && APP.file_older_than.map_or(true, |x| x > f_age) {
+                            if APP.t_status_interval {
                                 t_status.set_state("writing meta data");
                             }
                             write_meta(&path, &md)?
@@ -502,13 +565,13 @@ fn file_track(startout: Instant,
             None => break,
         }
     }
-    if CLI.update_status {
+    if APP.update_status {
         t_status.set_state(&format!("perking {} entries", stats.dtree.len()));
     }
     let last_count = count.load(Ordering::Relaxed);
     count.store(0, Ordering::Relaxed);
 
-    if CLI.usage_mode {
+    if APP.usage_mode {
         let track_cpu_time = cpu_time::ThreadTime::now();
         use num_format::{Locale, ToFormattedString};
         println!("Scanned {} files / {} usage in [{:.3} / {:.3}] (real / cpu) seconds",
@@ -516,26 +579,26 @@ fn file_track(startout: Instant,
                  greek(stats.total_usage as f64),
                  (Instant::now() - startout).as_secs_f64(), cputime.elapsed().as_secs_f64());
         for x in stats.dtree.iter() {
-            track_top_n(&mut stats.top_dir, &x.0, x.1.size_directly, CLI.limit); // track single immediate space
-            track_top_n(&mut stats.top_cnt_dir, &x.0, x.1.dir_count_directly, CLI.limit); // track dir with most # of dir right under it
-            track_top_n(&mut stats.top_cnt_file, &x.0, x.1.file_count_directly, CLI.limit); // track dir with most # of file right under it
-            track_top_n(&mut stats.top_cnt_overall, &x.0, x.1.file_count_recursively, CLI.limit); // track overall count
-            track_top_n(&mut stats.top_dir_overall, &x.0, x.1.size_recursively, CLI.limit); // track overall size
+            track_top_n(&mut stats.top_dir, &x.0, x.1.size_directly, APP.limit); // track single immediate space
+            track_top_n(&mut stats.top_cnt_dir, &x.0, x.1.dir_count_directly, APP.limit); // track dir with most # of dir right under it
+            track_top_n(&mut stats.top_cnt_file, &x.0, x.1.file_count_directly, APP.limit); // track dir with most # of file right under it
+            track_top_n(&mut stats.top_cnt_overall, &x.0, x.1.file_count_recursively, APP.limit); // track overall count
+            track_top_n(&mut stats.top_dir_overall, &x.0, x.1.size_recursively, APP.limit); // track overall size
         }
 
         for x in stats.extensions.iter() {
-            track_top_n_ext(&mut stats.top_ext, &x.0, *x.1, CLI.limit);
+            track_top_n_ext(&mut stats.top_ext, &x.0, *x.1, APP.limit);
         }
-        if CLI.update_status {
+        if APP.update_status {
             t_status.set_state("print");
         }
         print_disk_report(&stats);
         eprintln!("perk cpu time: {}", track_cpu_time.elapsed().as_secs_f32());
     }
-    if CLI.update_status {
+    if APP.update_status {
         t_status.set_state("exit");
     }
-    if CLI.write_thread_cpu_time {
+    if APP.write_thread_cpu_time {
         eprintln!("file track thread cpu time: {:.3}", t_cpu_thread_time.elapsed().as_secs_f64());
     }
     Ok(())
@@ -644,8 +707,8 @@ fn print_disk_report(stats: &AllStats) {
 
 //noinspection ALL
 fn parls() -> Result<()> {
-    if CLI.verbose > 0 { eprintln!("CLI: {:#?}", *CLI); }
-    let mut q: WorkerQueue<Option<PathBuf>> = WorkerQueue::new(CLI.no_threads, 0);
+    if APP.verbose > 0 { eprintln!("CLI: {:#?}", *APP); }
+    let mut q: WorkerQueue<Option<PathBuf>> = WorkerQueue::new(APP.no_threads, 0);
     let mut oq: WorkerQueue<Option<Vec<(PathBuf, Metadata)>>> = WorkerQueue::new(1, 0);
 
     let mut allstats = AllStats {
@@ -667,17 +730,17 @@ fn parls() -> Result<()> {
     let mut main_status = tt.setup_thread("main", "setup");
     main_status.register("registered");
 
-    if let Some(die_dur) = CLI.die_in {
+    if let Some(die_dur) = APP.die_in {
         spawn_death_timeout_thread(die_dur, &mut tt);
     };
 
 
-    q.push(Some(CLI.dir.to_path_buf())).with_context(|| format!("Cannot push top path: {}", CLI.dir.display()))?;
+    q.push(Some(APP.dir.to_path_buf())).with_context(|| format!("Cannot push top path: {}", APP.dir.display()))?;
     let startout = Instant::now();
     let startcpu = ProcessTime::now();
 
     let mut handles = vec![];
-    for _i in 0..CLI.no_threads {
+    for _i in 0..APP.no_threads {
         let mut q = q.clone();
         let mut oq = oq.clone();
         let mut t_status = tt.setup_thread("read_dir", "starting...");
@@ -695,21 +758,21 @@ fn parls() -> Result<()> {
     };
 
     main_status.set_state("monitor started");
-    if CLI.t_status_on_key || CLI.t_status_interval {
+    if APP.t_status_on_key || APP.t_status_interval {
         thread::spawn(move || {
-            if CLI.t_status_on_key {
+            if APP.t_status_on_key {
                 tt.monitor_on_enter();
-            } else if CLI.t_status_interval {
-                tt.monitor(CLI.ticker_interval);
+            } else if APP.t_status_interval {
+                tt.monitor(APP.ticker_interval);
             }
         });
     }
 
 
-    match (CLI.list_files, CLI.usage_mode) {
-        (true, true) => println!("List file stats and disk usage summary for: {}", CLI.dir.display()),
-        (false, true) => println!("Scanning disk usage summary for: {}", CLI.dir.display()),
-        (true, false) => println!("List file stats under: {}", CLI.dir.display()),
+    match (APP.list_files, APP.usage_mode) {
+        (true, true) => println!("List file stats and disk usage summary for: {}", APP.dir.display()),
+        (false, true) => println!("Scanning disk usage summary for: {}", APP.dir.display()),
+        (true, false) => println!("List file stats under: {}", APP.dir.display()),
         _ => Err(anyhow!("Error - neither usage or list mode specified"))?,
     }
     main_status.set_state("wait on queue finish");
@@ -717,21 +780,21 @@ fn parls() -> Result<()> {
     loop {
         let x = q.wait_for_finish_timeout(Duration::from_millis(250))?;
         if x != -1 { break; }
-        if CLI.verbose > 0 { q.status() };
+        if APP.verbose > 0 { q.status() };
     }
-    if CLI.verbose > 0 { q.print_max_queue(); }
-    if CLI.verbose > 0 { eprintln!("finished so sends the Nones and join"); }
+    if APP.verbose > 0 { q.print_max_queue(); }
+    if APP.verbose > 0 { eprintln!("finished so sends the Nones and join"); }
     main_status.set_state("joining");
-    for _ in 0..CLI.no_threads { q.push(None)?; }
+    for _ in 0..APP.no_threads { q.push(None)?; }
     for h in handles {
         h.join().expect("Cannot join a readdir thread");
     }
     main_status.set_state("output queue wait");
-    if CLI.verbose > 0 { eprintln!("waiting on out finish"); }
+    if APP.verbose > 0 { eprintln!("waiting on out finish"); }
     oq.wait_for_finish()?;
-    if CLI.verbose > 0 { eprintln!("push none of out queue"); }
+    if APP.verbose > 0 { eprintln!("push none of out queue"); }
     oq.push(None)?;
-    if CLI.verbose > 0 { eprintln!("joining out thread"); }
+    if APP.verbose > 0 { eprintln!("joining out thread"); }
     w_h.join().expect("cannot join a output thread")?;
 
 
