@@ -24,7 +24,7 @@ lazy_static! {
 /// the OS owns a faster and exclusive cache to local file system metadata.
 ///
 /// Each "opendir" is finished to completion so that
-/// the directory to minimize open time, but this costs more memory than straight recursion.
+/// the directory open time is minimized, but this costs more memory than straight recursion.
 /// This might also contribute to better performance as
 /// it may reduce contention on that remote file system versus holding the opendir open
 /// as you recurse a directory's children.  Sub directories found are queued for other
@@ -79,17 +79,19 @@ pub struct ParLsCfg {
     pub file_older_than: Option<SystemTime>,
 
     #[structopt(long = "re", parse(try_from_str = parse_regex))]
-    /// Keep only FILEs that match this RE
+    /// Keep only paths that match this RE
     ///
     /// Note that this can be used with the exclude_re, but this one
     /// is checked first and then the other if set.
-    /// Note this only applies to FILE paths and not directories.
+    /// RE matching is done on the whole path for both directories
+    /// and files.  Paths are not canonicalized.
     pub re: Option<Regex>,
 
     #[structopt(long = "exclude-re", parse(try_from_str = parse_regex))]
-    /// Exclude FILEs that match this RE
+    /// Exclude paths that match this RE
     ///
-    /// Note this only applies to FILEs paths and not directories.
+    /// RE matching is done on the whole path for both directories
+    /// and files.  Paths are not canonicalized.
     pub exclude_re: Option<Regex>,
 
     #[structopt(short = "v", parse(from_occurrences))]
