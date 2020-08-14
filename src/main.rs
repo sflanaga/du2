@@ -90,7 +90,7 @@ fn _read_dir_worker(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut Worker
                     }
                     Ok(i) => i,
                 };
-                for entry in dir_itr {
+                'ENTRY_LOOP: for entry in dir_itr {
                     let entry = entry?;
                     let path = entry.path();
                     let md = match symlink_metadata(&entry.path()) {
@@ -104,37 +104,37 @@ fn _read_dir_worker(queue: &mut WorkerQueue<Option<PathBuf>>, out_q: &mut Worker
                         eprintln!("{}: raw meta: {:#?}", *EXE, &md);
                     }
 
+                    //
+                    // re filters
+                    //
+                    if let Some(re) = &APP.re {
+                        let s = path.to_str().unwrap();
+                        if !re.is_match(path.to_str().unwrap()) {
+                            if APP.verbose > 1 {
+                                eprintln!("{}: keep RE: filtered file not matching RE: \'{}\' file: {}", *EXE, &re.as_str(), s);
+                            }
+                            continue 'ENTRY_LOOP;
+                        }
+                        if APP.verbose > 1 {
+                            eprintln!("{}: keep RE: Unfiltered, file DOES match  RE: \'{}\' file: {}", *EXE, &re.as_str(),s);
+                        }
+                    }
+                    if let Some(re) = &APP.exclude_re {
+                        let s = path.to_str().unwrap();
+                        if re.is_match(path.to_str().unwrap()) {
+                            if APP.verbose > 1 {
+                                eprintln!("{}: exclude re: Filtered path matching RE: \'{}\' file: {}", *EXE, &re.as_str(),s);
+                            }
+                            continue 'ENTRY_LOOP;
+                        }
+                        if APP.verbose > 1 {
+                            eprintln!("{}: exclude re: Unfiltered file DOES NOT match  RE: \'{}\' file: {}", *EXE, &re.as_str(), s);
+                        }
+                    }
 
                     let file_type: FileType = md.file_type();
                     if !file_type.is_symlink() {
                         if file_type.is_file() {
-                            //
-                            // re filters
-                            //
-                            if let Some(re) = &APP.re {
-                                let s = path.to_str().unwrap();
-                                if !re.is_match(path.to_str().unwrap()) {
-                                    if APP.verbose > 1 {
-                                        eprintln!("{}: filtered file not matching re: {}", *EXE, s);
-                                    }
-                                    continue;
-                                }
-                                if APP.verbose > 1 {
-                                    eprintln!("{}: NOT filtered file DOES match re: {}", *EXE, s);
-                                }
-                            }
-                            if let Some(re) = &APP.exclude_re {
-                                let s = path.to_str().unwrap();
-                                if re.is_match(path.to_str().unwrap()) {
-                                    if APP.verbose > 1 {
-                                        eprintln!("{}: filtered path matching exclude_re: {}", *EXE, s);
-                                    }
-                                    continue;
-                                }
-                                if APP.verbose > 1 {
-                                    eprintln!("{}: NOT filtered file DOES NOT match re: {}", *EXE, s);
-                                }
-                            }
                             //
                             // age filters
                             //
@@ -386,7 +386,10 @@ fn track_top_n(heap: &mut BinaryHeap<TrackedPath>, p: &PathBuf, s: u64, limit: u
     }
 }
 
-fn child_is_higher_than_base_dir(base: &Path, child: &Path) -> Result<bool> {
+fn _child_is_higher_than_base_dir(base: &Path, child: &Path) -> Result<bool> {
+    // WARNING: this str check does not handle ./ vs .
+    // it needs to be more logical - left here for posterity
+
     let base_s = base.to_string_lossy();
     let child_s = child.to_string_lossy();
 
@@ -396,6 +399,16 @@ fn child_is_higher_than_base_dir(base: &Path, child: &Path) -> Result<bool> {
     if child_s.starts_with(&base_s[..]) {
         Ok(false)
     } else {
+        eprintln!("base_s: {}  child_s: {}", base_s, child_s);
+        Ok(true)
+    }
+}
+
+fn child_is_higher_than_base_dir(base: &Path, child: &Path) -> Result<bool> {
+    if child.starts_with(&base) {
+        Ok(false)
+    } else {
+        eprintln!("base_s: {}  child_s: {}", base.display(), child.display());
         Ok(true)
     }
 }
