@@ -12,6 +12,9 @@ lazy_static! {
        get_cli()
     };
     pub static ref EXE: String = get_exe_name();
+
+    pub static ref BUILD_INFO: String  = format!("ver: {}  rev: {}  date: {}", env!("CARGO_PKG_VERSION"), env!("VERGEN_SHA_SHORT"), env!("VERGEN_BUILD_DATE"));
+
 }
 
 #[derive(StructOpt, Debug, Clone)]
@@ -38,6 +41,7 @@ lazy_static! {
 ///
 /// Symbolic links are not followed
 #[structopt(
+version = BUILD_INFO.as_str(), rename_all = "kebab-case",
 global_settings(& [
 structopt::clap::AppSettings::ColoredHelp,
 structopt::clap::AppSettings::UnifiedHelpMessage
